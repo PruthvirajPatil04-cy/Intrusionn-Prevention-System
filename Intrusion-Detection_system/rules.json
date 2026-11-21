@@ -1,0 +1,40 @@
+{
+  "general": {
+    "simulation_mode": false,
+    "block_duration_seconds": 300,
+    "whitelist": [
+      "127.0.0.1",
+      "::1"
+    ]
+  },
+  "rate_limits": {
+    "port_scan": {
+      "threshold_ports": 15,
+      "time_window_seconds": 5
+    },
+    "syn_flood": {
+      "threshold_packets": 30,
+      "time_window_seconds": 3
+    },
+    "icmp_flood": {
+      "threshold_packets": 25,
+      "time_window_seconds": 2
+    }
+  },
+  "blacklisted_ips": [],
+  "sensitive_ports": [21, 22, 23, 445, 1433, 3306, 3389],
+  "payload_signatures": [
+    {
+      "name": "SQL Injection Pattern",
+      "pattern": "(?i)union\\s+select|select\\s+.*\\s+from|drop\\s+table|--\\s*$"
+    },
+    {
+      "name": "Path Traversal Attempt",
+      "pattern": "(?i)\\.\\./\\.\\./|\\.\\.\\\\.\\.\\\\|/etc/passwd|win\\.ini"
+    },
+    {
+      "name": "Cross-Site Scripting (XSS)",
+      "pattern": "(?i)<script[^>]*>|javascript:|alert\\("
+    }
+  ]
+}

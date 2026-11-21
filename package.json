@@ -1,0 +1,18 @@
+{
+  "name": "intrusion-prevention-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Unified Intrusion Prevention System (Python Engine + Next.js IPP Blueprint Portal)",
+  "scripts": {
+    "dev": "npm --prefix ipp-blueprint run dev",
+    "build": "npm --prefix ipp-blueprint run build",
+    "start": "npm --prefix ipp-blueprint run start",
+    "lint": "npm --prefix ipp-blueprint run lint",
+    "ips:simulate": "python Intrusion-Detection_system/main.py --simulate",
+    "ips:start": "python Intrusion-Detection_system/main.py",
+    "ips:test": "python Intrusion-Detection_system/test_ips.py",
+    "ips:nemotron": "python Intrusion-Detection_system/nemotron_analyzer.py",
+    "ips:gemma": "python Intrusion-Detection_system/gemma_client.py",
+    "run:all": "python run_all.py"
+  }
+}
