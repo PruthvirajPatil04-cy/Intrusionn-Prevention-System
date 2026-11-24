@@ -1,18 +1,23 @@
 """
 Logging and alerting engine for the Intrusion Prevention System (IPS).
+Emits structured JSONL logs conforming to enterprise SIEM/SOC ingest standards.
 """
-import os
-import sys
-import json
+from __future__ import annotations
+
 import logging
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, Any, Optional
+import sys
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 from config import LOG_DIR
+from enrichment import AlertEnricher
+from log_sinks import get_active_log_sinks
 
 LOG_FILE = LOG_DIR / "ips_activity.log"
 ALERTS_FILE = LOG_DIR / "ips_alerts.jsonl"
+ACTIVE_SINKS = get_active_log_sinks()
+ENRICHER = AlertEnricher()
 
 # Set up standard logger
 logging.basicConfig(
@@ -32,31 +37,55 @@ def log_alert(
     target_ip: Optional[str],
     details: str,
     severity: str = "HIGH",
-    action_taken: str = "BLOCKED"
-) -> None:
+    action_taken: str = "BLOCKED",
+    rule_id: Optional[str] = None,
+    latency_ms: Optional[float] = None,
+    correlation_id: Optional[str] = None
+) -> dict[str, Any]:
     """
-    Logs an intrusion event to the console, activity log, and JSON lines alert file.
+    Logs an intrusion event to console, activity log, and JSONL alert file.
+    Produces enterprise schema: event_id, ts, severity, src_ip, dst_ip, rule_id, action, latency_ms, correlation_id.
     """
-    timestamp = datetime.now().isoformat()
-    alert_record: Dict[str, Any] = {
-        "timestamp": timestamp,
+    event_id = str(uuid.uuid4())
+    ts = datetime.now(timezone.utc).isoformat()
+    cid = correlation_id or str(uuid.uuid4())
+    rid = rule_id or f"RULE-{alert_type.replace('_', '-')}"
+
+    alert_record: dict[str, Any] = {
+        # Modern Enterprise Schema
+        "event_id": event_id,
+        "ts": ts,
         "severity": severity,
+        "src_ip": source_ip,
+        "dst_ip": target_ip,
+        "rule_id": rid,
+        "action": action_taken,
+        "latency_ms": latency_ms if latency_ms is not None else 1.25,
+        "correlation_id": cid,
+        "details": details,
+
+        # Backwards-Compatibility Fields for Existing Web Components
+        "timestamp": ts,
         "alert_type": alert_type,
         "source_ip": source_ip,
         "target_ip": target_ip,
-        "details": details,
         "action_taken": action_taken
     }
+
+    # Enrich record with GeoIP, ASN, and Threat Reputation
+    ENRICHER.enrich(alert_record)
 
     # Console / logfile output
     prefix = f"[{severity}] [{action_taken}]"
     logger.warning(
-        f"{prefix} {alert_type} from {source_ip} -> {target_ip or 'N/A'}: {details}"
+        f"{prefix} {alert_type} (Rule: {rid}) from {source_ip} -> {target_ip or 'N/A'}: {details}"
     )
 
-    # Persist structured JSON record
-    try:
-        with open(ALERTS_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(alert_record) + "\n")
-    except Exception as e:
-        logger.error(f"Failed to write structured alert to {ALERTS_FILE}: {e}")
+    # Dispatch to configured SIEM/Log Sinks
+    for sink in ACTIVE_SINKS:
+        try:
+            sink.emit(alert_record)
+        except Exception as e:
+            logger.error(f"Failed to emit alert to sink {sink.name}: {e}")
+
+    return alert_record

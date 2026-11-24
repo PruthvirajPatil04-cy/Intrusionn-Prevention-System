@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  # 1. Python Real-Time Intrusion Prevention Engine
+  engine:
+    build:
+      context: ./Intrusion-Detection_system
+      dockerfile: Dockerfile
+    container_name: ips-engine
+    restart: unless-stopped
+    # Required for Linux packet capture and active firewall rule modification
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - FIREWALL_BACKEND=nftables
+      - IPS_API_SECRET=ips-dev-secret-token
+      - NEMOTRON_API_KEY=${NEMOTRON_API_KEY:-}
+      - GEMMA_API_KEY=${GEMMA_API_KEY:-}
+    volumes:
+      - ips-logs:/app/logs
+    command: ["python", "main.py", "--simulate"]
+
+  # 2. Next.js Enterprise Cybersecurity Portal
+  web:
+    build:
+      context: ./ipp-blueprint
+      dockerfile: Dockerfile
+    container_name: ipp-portal
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - IPS_API_SECRET=ips-dev-secret-token
+    volumes:
+      - ips-logs:/app/logs:ro
+    depends_on:
+      - engine
+
+volumes:
+  ips-logs:
+    name: ips-shared-logs

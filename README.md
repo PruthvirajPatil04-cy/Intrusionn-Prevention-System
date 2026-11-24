@@ -1,114 +1,161 @@
-# Intrusion Prevention System & IPP Blueprint
+# Intrusion Prevention System (IPS) & Enterprise IPP Blueprint
 
-A production-grade, full-stack cybersecurity platform bringing the **Intrusion-Detection_system** (Python engine) and **ipp-blueprint** (Enterprise Next.js 14 Web Portal) together in one place.
+[![Continuous Integration](https://github.com/PruthvirajPatil04-cy/Intrusionn-Prevention-System/actions/workflows/ci.yml/badge.svg)](https://github.com/PruthvirajPatil04-cy/Intrusionn-Prevention-System/actions)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue.svg)](https://www.typescriptlang.org/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-green.svg)](https://www.python.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-14.2-black.svg)](https://nextjs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
-
-## Workspace Structure
-
-```
-d:\Projects\Intrusion-Prevention-System/
-│
-├── Intrusion-Detection_system/       # Python Real-Time Intrusion Detection & Prevention Engine
-│   ├── main.py                       # CLI entry point (Active blocking or simulation)
-│   ├── analyzer.py                   # Port scan, SYN flood, ICMP flood & DPI regex inspection
-│   ├── blocker.py                    # Windows Defender Firewall netsh automation & quarantine TTL
-│   ├── sniffer.py                    # Scapy packet capture wrapper
-│   ├── rules.json                    # Active thresholds, blacklists & payload signatures
-│   ├── config.py                     # Configuration loader
-│   ├── logger.py                     # Event logger & structured JSONL alert exporter
-│   ├── nemotron_analyzer.py          # NVIDIA Nemotron 3.5 AI threat explainer
-│   ├── gemma_client.py               # Google Gemma 4 31B AI analysis client
-│   ├── test_ips.py                   # Threat simulation & automated unit tests
-│   ├── requirements.txt              # Python dependencies (scapy, requests)
-│   └── logs/                         # Real-time ips_activity.log & ips_alerts.jsonl
-│
-├── ipp-blueprint/                    # Enterprise Next.js 14 Cybersecurity Web Portal
-│   ├── app/                          # Next.js 14 App Router routes:
-│   │   ├── page.tsx                  # / Executive Dashboard with live engine telemetry
-│   │   ├── program/                  # /program Strategic Objectives & Governance
-│   │   ├── architecture/             # /architecture Interactive 5-tier concentric diagram
-│   │   ├── lifecycle/                # /lifecycle 5-stage stepper (Scope → Maintain)
-│   │   ├── soc/                      # /soc SIEM/SOAR Pipelines & Correlation Playbooks
-│   │   ├── zero-trust/               # /zero-trust Identity Enforcement & Microsegmentation
-│   │   ├── metrics/                  # /metrics Recharts KPI Visualizer
-│   │   ├── frameworks/               # /frameworks NIST SP 800-94 / CSF 2.0 / CIS v8 / ATT&CK
-│   │   ├── emerging/                 # /emerging TLS 1.3, AI/ML Detection, API Gateways, IaC
-│   │   ├── checklist/                # /checklist 25+ Controls with LocalStorage persistence
-│   │   ├── about/                    # /about Scope, Operating Boundaries & Legal Disclaimers
-│   │   └── api/ips/route.ts          # Live bridge reading rules & logs and executing tests
-│   ├── components/                   # Cyber UI design system & LiveEngineStatus widget
-│   ├── data/                         # Typed program models & controls source of truth
-│   └── package.json                  # Web dependencies
-│
-├── package.json                      # Unified root scripts
-├── run_all.py                        # Unified launcher running both engine & portal concurrently
-├── start_all.bat                     # Windows one-click launcher
-└── README.md
-```
+An enterprise-grade, full-stack cybersecurity platform combining an **Asynchronous Cross-Platform Intrusion Prevention Engine** with an **Interactive Governance & Operations Web Portal**.
 
 ---
 
-## How They Work Together
+## Architecture Overview
 
-1. **Telemetry & Log Synchronization**:
-   * The Python engine writes real-time threat detections, IP quarantine blocks, and traffic evaluations into `Intrusion-Detection_system/logs/ips_alerts.jsonl`.
-   * The web application's API (`ipp-blueprint/app/api/ips/route.ts`) reads these logs and `Intrusion-Detection_system/rules.json` dynamically.
-   * The Executive Dashboard (`/`) displays live detection telemetry, quarantine TTL, port scan thresholds, and active alert streams.
-
-2. **Interactive Threat Simulation From Web UI**:
-   * Clicking the **"Simulate Attack Traffic"** button directly on the web dashboard calls `POST /api/ips`, which triggers `Intrusion-Detection_system/test_ips.py`.
-   * The engine detects SQL injections, port scans, and ICMP floods in real time and automatically updates the dashboard alert stream!
-
-3. **Unified Execution**:
-   * Run both services concurrently with a single command:
-     ```powershell
-     python run_all.py
-     ```
-     or
-     ```powershell
-     npm run run:all
-     ```
+```
++-----------------------------------------------------------------------------------------+
+|                               INTRUSION PREVENTION SYSTEM                               |
++-----------------------------------------------------------------------------------------+
+                                             |
+             +-------------------------------+-------------------------------+
+             |                                                               |
+             v                                                               v
++-----------------------------------------+     +-----------------------------------------+
+|    PYTHON INTRUSION DETECTION ENGINE    |     |      ENTERPRISE NEXT.JS WEB PORTAL      |
+|     (Intrusion-Detection_system/)       |     |             (ipp-blueprint/)            |
++-----------------------------------------+     +-----------------------------------------+
+| - Capture Backend:                      |     | - 11 Cyber Program Routes:              |
+|   * Scapy (User-Space Queue)            |     |   * / (Dashboard & Live Telemetry)      |
+|   * eBPF / XDP Scaffold (docs/PERF.md)  |     |   * /program (Governance & Policies)    |
+| - Stateful Threat Detection:            |     |   * /architecture (5-Tier Interactive)  |
+|   * Port Scanning & Rate Windows        |     |   * /lifecycle (5-Stage Stepper)        |
+|   * TCP SYN & ICMP Ping Floods          |     |   * /soc (Playbooks & Purple Team)      |
+|   * ReDoS-Guarded Regex DPI             |     |   * /zero-trust (Microsegmentation)     |
+|   * TLS ClientHello JA3/JA4 & SNI       |     |   * /metrics (Recharts Visualizer)      |
+| - Cross-Platform Firewall Enforcement:  |     |   * /frameworks (NIST & MITRE Matrix)   |
+|   * Windows Defender Firewall (netsh)   |     |   * /emerging (Encrypted / AI Tech)     |
+|   * Linux nftables / iptables           |     |   * /checklist (Zustand LocalStorage)   |
+|   * Simulation Mode (Safe dry-run)      |     |   * /about (Operating Boundaries)       |
+| - Threat Intelligence:                  |     |                                         |
+|   * MISP & AlienVault OTX Connectors    |     | - Security & API Bridge:                |
+|   * Resilient Local Cache & Enrichment  |     |   * Authenticated /api/ips (Bearer)     |
+| - Telemetry & SIEM Export:              |     |   * Real-Time SSE Stream (/stream)      |
+|   * JSONL, Syslog RFC 5424, CEF, LEEF  |     |   * Audited SOC Containment API         |
+|   * Prometheus Metrics (/metrics)       |     |   * In-Memory Token Bucket Rate Limiter |
++-----------------------------------------+     +-----------------------------------------+
+                     \                                       /
+                      \                                     /
+                       v                                   v
+             +---------------------------------------------------+
+             |               SHARED TELEMETRY & LOGS             |
+             |       ips_alerts.jsonl | soc_containment_audit    |
+             +---------------------------------------------------+
+```
 
 ---
 
-## Quick Start Commands
+## Quick Start Guide
 
-### 1. Run Everything Together
-```powershell
-python run_all.py
+### 1. Run Everything Together (Docker Compose)
+
+The easiest way to launch both the Python engine and the web portal on Linux or container hosts:
+
+```bash
+docker compose up -d --build
 ```
-*(Starts the Next.js portal on http://localhost:3000 and the Python engine in simulation mode).*
+* Web Portal: [http://localhost:3000](http://localhost:3000)
+* Engine Prometheus Metrics: [http://localhost:9100/metrics](http://localhost:9100/metrics)
 
-### 2. Run Individual Components
+To view service logs:
+```bash
+docker compose logs -f
+```
 
-#### Web Portal (`ipp-blueprint`):
+---
+
+### 2. Run on Windows (Bare-Metal)
+
+#### Step 1: Launch the Web Portal
 ```powershell
 cd ipp-blueprint
-npm run dev      # http://localhost:3000
-npm run build    # Production build
-npm run lint     # Lint check
+npm install
+npm run dev
 ```
+Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
-#### Intrusion Detection Engine (`Intrusion-Detection_system`):
+#### Step 2: Launch the Python Engine
+Open an elevated **PowerShell as Administrator**:
 ```powershell
 cd Intrusion-Detection_system
-
-# Run safe simulation / monitoring mode:
-python main.py --simulate
-
-# Run active Windows Firewall blocking (Run PowerShell as Administrator):
+pip install -r requirements.txt
 python main.py
-
-# Run attack simulation tests:
-python test_ips.py
 ```
+*(To run without modifying Windows Firewall rules, pass the `--simulate` flag).*
 
-#### AI Threat Analysis:
+#### Step 3: Run Attack Simulation Tests
 ```powershell
-# NVIDIA Nemotron 3.5 deep threat inspection:
-python Intrusion-Detection_system/nemotron_analyzer.py
-
-# Google Gemma 4 31B reasoning:
-python Intrusion-Detection_system/gemma_client.py
+python Intrusion-Detection_system/test_ips.py
 ```
+Simulated SQLi attacks, port scans, and ICMP floods will be detected, logged, and streamed live to the dashboard!
+
+---
+
+## Testing & Quality Gates
+
+### Run All Tests
+```bash
+# Run Python Unit & Integration Tests (39 tests)
+cd Intrusion-Detection_system && python -m pytest -v
+
+# Run Python Linter
+cd Intrusion-Detection_system && python -m ruff check .
+
+# Run Frontend Unit & Security Tests (21 tests)
+cd ipp-blueprint && npm run test
+
+# Run Playwright End-to-End Suite
+cd ipp-blueprint && npm run test:e2e
+
+# Run Frontend Production Build
+cd ipp-blueprint && npm run build
+```
+
+---
+
+## Environment Variables Reference
+
+| Variable Name | Default | Purpose |
+| :--- | :--- | :--- |
+| `IPS_API_SECRET` | `ips-dev-secret-token` | Shared secret for `/api/ips` and `/api/ips/containment` Bearer token authentication. |
+| `FIREWALL_BACKEND` | `netsh` (Windows) / `nftables` (Linux) | Firewall enforcement driver (`netsh`, `nftables`, `iptables`, `simulation`). |
+| `LOG_SINKS` | `jsonl,cef,syslog,leef` | Comma-separated list of active SIEM export formats. |
+| `NEMOTRON_API_KEY` | None | NVIDIA NIM cloud API key for Nemotron 3.5 AI threat reasoning. |
+| `GEMMA_API_KEY` | None | NVIDIA NIM API key for Google Gemma 4 31B AI logic analysis. |
+
+---
+
+## Security Architecture & Guarantees
+
+* **Zero Shell Execution:** All firewall interactions and subprocess calls build explicit argument arrays with `shell=False` and bounded 10s timeouts.
+* **Strict Parameter Allowlisting:** IP addresses are validated with `ipaddress.ip_address` / CIDR parsers; rule names must conform to `^[A-Za-z0-9_.\- ]{1,64}$`.
+* **ReDoS Protection:** Deep packet inspection regexes use bounded per-match timeouts (`timeout=0.05s`), preventing catastrophic backtracking Denial-of-Service attacks.
+* **API Guards & Strict Validation:** All API endpoints enforce Zod schemas with `.strict()`, token-bucket rate limiting (429), and Bearer authentication (401).
+* **Hardened Headers:** Enforces Content Security Policy (CSP), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `Strict-Transport-Security`.
+
+---
+
+## Documentation Index
+
+* **[AUDIT.md](docs/AUDIT.md):** Initial baseline security audit and vulnerability assessment.
+* **[LOG_SCHEMA.md](docs/LOG_SCHEMA.md):** Structured JSONL log record specification for SIEM ingest.
+* **[PERF.md](docs/PERF.md):** Scapy performance limits and eBPF/XDP zero-copy line-rate roadmap.
+* **[RELEASE.md](docs/RELEASE.md):** Deployment checklist, container setup, and rollback playbooks.
+* **[SECURITY.md](SECURITY.md):** Vulnerability disclosure policy and supported versions.
+* **[CHANGELOG.md](CHANGELOG.md):** Complete version history and upgrade details.
+
+---
+
+## Known Limitations & Production Notes
+
+1. **User-Space Scapy Throughput:** Pure Python packet capture is capped at approximately 12,000 packets per second. For 10Gbps+ edge links, deploy an eBPF/XDP capture hook as documented in [docs/PERF.md](docs/PERF.md).
+2. **Promiscuous Mode Privileges:** Live packet capture and active firewall rule insertion require Administrator rights on Windows and `CAP_NET_ADMIN` / `CAP_NET_RAW` capabilities on Linux/Docker.

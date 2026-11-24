@@ -1,119 +1,118 @@
-#!/usr/bin/env python3
 """
-Intrusion Prevention System (IPS)
-Main Entry Point and CLI Orchestrator.
+Main Entrypoint for the Intrusion Prevention System (IPS).
+Enforces least-privilege checks, startup diagnostics, and clean shutdown handling.
 """
-import sys
+from __future__ import annotations
+
 import argparse
+import os
 import signal
+import sys
 import time
-from pathlib import Path
+from typing import Any
 
-from config import load_rules, CONFIG_FILE
-from blocker import Blocker, is_admin
 from analyzer import IntrusionAnalyzer
-from sniffer import PacketSniffer
+from blocker import Blocker, is_admin
+from config import load_rules
 from logger import logger
-
-BANNER = r"""
-========================================================================
-       ___ _   _ _____ ____  _   _ ____ ___ ___  _   _ 
-      |_ _| \ | |_   _|  _ \| | | / ___|_ _/ _ \| \ | |
-       | ||  \| | | | | |_) | | | \___ \| | | | |  \| |
-       | || |\  | | | |  _ <| |_| |___) | | |_| | |\  |
-      |___|_| \_| |_| |_| \_\\___/|____/___\___/|_| \_|
-             PREVENTION SYSTEM (IPS) - REAL-TIME DEFENDER
-========================================================================
-"""
+from sniffer import PacketSniffer
 
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Autonomous Intrusion Prevention System (IPS)"
+        description="Autonomous Intrusion Prevention System (IPS) Engine"
     )
     parser.add_argument(
-        "-i", "--interface",
+        "--simulate",
+        action="store_true",
+        help="Run in simulation mode (logs alerts and simulated drops, no actual firewall changes)"
+    )
+    parser.add_argument(
+        "--interface",
         type=str,
         default=None,
-        help="Network interface to sniff on (default: default route interface)"
-    )
-    parser.add_argument(
-        "-s", "--simulate",
-        action="store_true",
-        help="Run in simulation mode (detect and log, but do not alter firewall rules)"
-    )
-    parser.add_argument(
-        "-c", "--config",
-        type=Path,
-        default=CONFIG_FILE,
-        help=f"Path to rules configuration file (default: {CONFIG_FILE})"
+        help="Network interface to sniff on (default: auto-detected primary interface)"
     )
     parser.add_argument(
         "--unblock",
         type=str,
-        metavar="IP",
-        help="Unblock a specific IP address and exit"
-    )
-    parser.add_argument(
-        "--ttl",
-        type=int,
         default=None,
-        help="Override quarantine block duration in seconds (e.g. 300)"
+        help="Manually unblock a specific IP address and exit"
     )
     return parser.parse_args()
 
 
-def main():
-    print(BANNER)
+def perform_startup_checks(simulation_mode: bool) -> bool:
+    """Verifies operating system privileges and network interface capabilities."""
+    has_admin = is_admin()
+    os_name = "Windows" if os.name == "nt" else sys.platform
+
+    logger.info("=======================================================")
+    logger.info(f"   STARTING INTRUSION PREVENTION SYSTEM (OS: {os_name})")
+    logger.info("=======================================================")
+    logger.info(f"[*] Privilege Check: {'ADMINISTRATOR / ROOT' if has_admin else 'STANDARD USER'}")
+    logger.info(f"[*] Engine Mode: {'SIMULATION' if simulation_mode or not has_admin else 'ACTIVE FIREWALL ENFORCEMENT'}")
+
+    if not has_admin and not simulation_mode:
+        logger.error(
+            "[!] CRITICAL PRIVILEGE ERROR: Running as standard user without elevated privileges. "
+            "Active inline packet blocking requires Administrator rights on Windows (or root/NET_ADMIN on Linux). "
+            "The engine cannot modify firewall rules in this session."
+        )
+        return False
+    return True
+
+
+def main() -> None:
     args = parse_arguments()
+    rules = load_rules()
 
-    # Load configuration
-    rules = load_rules(args.config)
-    sim_mode = args.simulate or rules.get("general", {}).get("simulation_mode", False)
-    ttl = args.ttl or rules.get("general", {}).get("block_duration_seconds", 300)
+    simulation_mode = args.simulate or rules.get("general", {}).get("simulation_mode", False)
+    block_duration = rules.get("general", {}).get("block_duration_seconds", 300)
 
-    # Initialize Blocker
-    blocker = Blocker(simulation_mode=sim_mode, block_duration=ttl)
-
-    # Handle single unblock command
+    # Manual unblock mode
     if args.unblock:
-        logger.info(f"[*] Removing block for IP: {args.unblock}")
-        blocker.unblock_ip(args.unblock)
-        sys.exit(0)
+        blocker = Blocker(simulation_mode=simulation_mode, block_duration=block_duration)
+        try:
+            success = blocker.unblock_ip(args.unblock)
+            if success:
+                print(f"[+] Successfully unblocked IP: {args.unblock}")
+                sys.exit(0)
+            else:
+                print(f"[-] IP {args.unblock} was not found in active blocked list.")
+                sys.exit(1)
+        except Exception as e:
+            print(f"[!] Validation error unblocking {args.unblock}: {e}")
+            sys.exit(1)
 
-    # Privilege warning
-    if not is_admin() and not sim_mode:
-        print("[!] NOTICE: Running without administrator privileges.")
-        print("[!] Active firewall blocking requires admin rights.")
-        print("[!] Switching automatically to SIMULATION MODE.\n")
-        blocker.simulation_mode = True
+    # Perform least-privilege checks
+    startup_ok = perform_startup_checks(simulation_mode)
+    if not startup_ok and not simulation_mode:
+        logger.warning("[!] Automatically downgrading session to SIMULATION mode for safety.")
+        simulation_mode = True
 
-    print(f"[*] Operational Mode: {'[SIMULATION / DRY-RUN]' if blocker.simulation_mode else '[ACTIVE BLOCKING]'}")
-    print(f"[*] Quarantine Duration: {blocker.block_duration} seconds")
-    print(f"[*] Loaded rules from: {args.config}\n")
-
-    # Initialize Analyzer and Sniffer
+    blocker = Blocker(simulation_mode=simulation_mode, block_duration=block_duration)
     analyzer = IntrusionAnalyzer(rules=rules, blocker=blocker)
     sniffer = PacketSniffer(analyzer=analyzer, interface=args.interface)
 
-    # Graceful shutdown handler
-    def shutdown_handler(sig, frame):
-        print("\n[*] Stopping Intrusion Prevention System...")
+    # Clean shutdown handling
+    def signal_handler(sig: int, frame: Any) -> None:
+        logger.info("\n[*] Interruption signal received. Shutting down IPS...")
         sniffer.stop()
         blocker.cleanup_all()
-        print(f"[*] Session ended. Total packets analyzed: {sniffer.packet_count}")
+        logger.info("[*] IPS Engine terminated safely.")
         sys.exit(0)
 
-    signal.signal(signal.SIGINT, shutdown_handler)
-    if hasattr(signal, "SIGBREAK"):
-        signal.signal(signal.SIGBREAK, shutdown_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     try:
         sniffer.start()
-    except KeyboardInterrupt:
-        shutdown_handler(None, None)
+        logger.info("[*] IPS packet capture is active. Press Ctrl+C to stop.")
+        while True:
+            time.sleep(1)
     except Exception as e:
-        logger.error(f"[!] Fatal error in sniffer: {e}")
+        logger.critical(f"[!] Fatal error in IPS main loop: {e}", exc_info=True)
         blocker.cleanup_all()
         sys.exit(1)
 

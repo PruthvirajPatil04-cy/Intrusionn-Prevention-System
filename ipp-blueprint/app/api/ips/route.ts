@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
+import { isAuthenticated } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { IpsPostRequestSchema } from "@/lib/schemas";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 function findIdsDir(): string {
   const candidates = [
@@ -23,7 +26,33 @@ function findIdsDir(): string {
   return candidates[0];
 }
 
-export async function GET() {
+function getClientIdentifier(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+  return "127.0.0.1";
+}
+
+export async function GET(req: Request) {
+  // 1. Rate Limiting Check
+  const clientIp = getClientIdentifier(req);
+  const rateLimit = checkRateLimit(clientIp, 60, 60000);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Too many requests.", retryAfterSeconds: rateLimit.retryAfterSeconds },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+    );
+  }
+
+  // 2. Authentication Check
+  if (!isAuthenticated(req)) {
+    return NextResponse.json(
+      { error: "Unauthorized: Missing or invalid authentication token" },
+      { status: 401 }
+    );
+  }
+
   try {
     const idsDir = findIdsDir();
     const rulesPath = path.join(idsDir, "rules.json");
@@ -56,39 +85,108 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       rules,
       recentAlertsCount: alerts.length,
-      alerts
+      alerts,
     });
   } catch (error: any) {
-    return NextResponse.json({
-      status: "error",
-      message: error?.message || "Failed to read IPS engine state"
-    }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: error?.message || "Failed to read IPS engine state" },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(req: Request) {
+  // 1. Rate Limiting Check (More conservative for execution operations)
+  const clientIp = getClientIdentifier(req);
+  const rateLimit = checkRateLimit(`post_${clientIp}`, 15, 60000);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Please wait before triggering engine actions.", retryAfterSeconds: rateLimit.retryAfterSeconds },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+    );
+  }
+
+  // 2. Authentication Check
+  if (!isAuthenticated(req)) {
+    return NextResponse.json(
+      { error: "Unauthorized: Missing or invalid authentication token" },
+      { status: 401 }
+    );
+  }
+
+  // 3. Input Validation via Zod Schema
+  let rawBody: unknown;
   try {
-    const body = await req.json().catch(() => ({}));
-    const action = body.action || "simulate";
+    rawBody = await req.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body provided" },
+      { status: 400 }
+    );
+  }
+
+  const parseResult = IpsPostRequestSchema.safeParse(rawBody);
+  if (!parseResult.success) {
+    return NextResponse.json(
+      {
+        error: "Validation failed",
+        issues: parseResult.error.issues.map(i => ({ path: i.path.join("."), message: i.message })),
+      },
+      { status: 400 }
+    );
+  }
+
+  const { action, targetIp } = parseResult.data;
+
+  try {
+    const idsDir = findIdsDir();
 
     if (action === "simulate") {
-      const idsDir = findIdsDir();
       const testScript = path.join(idsDir, "test_ips.py");
-      
-      const { stdout, stderr } = await execAsync(`python "${testScript}"`, { cwd: idsDir });
-      
+      if (!fs.existsSync(testScript)) {
+        return NextResponse.json({ error: "Test script not found" }, { status: 404 });
+      }
+
+      // Safe subprocess execution: argument array, no shell execution, explicit timeout
+      const { stdout, stderr } = await execFileAsync("python", [testScript], {
+        cwd: idsDir,
+        shell: false,
+        timeout: 15000,
+      });
+
       return NextResponse.json({
         success: true,
         message: "Threat simulation completed and logged to IPS engine successfully",
         stdout,
-        stderr
+        stderr,
       });
     }
 
-    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    if (action === "unblock" && targetIp) {
+      const mainScript = path.join(idsDir, "main.py");
+      const { stdout, stderr } = await execFileAsync("python", [mainScript, "--unblock", targetIp], {
+        cwd: idsDir,
+        shell: false,
+        timeout: 10000,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `Unblock operation executed for ${targetIp}`,
+        stdout,
+        stderr,
+      });
+    }
+
+    if (action === "status") {
+      return NextResponse.json({ success: true, message: "Engine status verified" });
+    }
+
+    return NextResponse.json({ error: "Action not supported" }, { status: 400 });
   } catch (err: any) {
-    return NextResponse.json({
-      error: err?.message || "Failed to execute engine command"
-    }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || "Failed to execute engine command" },
+      { status: 500 }
+    );
   }
 }

@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { Terminal, ShieldAlert, CheckCircle, RefreshCw, AlertTriangle, Radio, Zap } from "lucide-react";
+import React, { useEffect, useState, useRef } from "react";
+import { Terminal, ShieldAlert, CheckCircle, RefreshCw, AlertTriangle, Radio, Zap, Lock, Activity } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 
 interface AlertRecord {
+  event_id?: string;
+  ts?: string;
   timestamp: string;
   severity: string;
   alert_type: string;
@@ -12,21 +14,35 @@ interface AlertRecord {
   target_ip: string | null;
   details: string;
   action_taken: string;
+  rule_id?: string;
+  latency_ms?: number;
 }
+
+const DEFAULT_AUTH_TOKEN = "ips-dev-secret-token";
 
 export function LiveEngineStatus() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [simulating, setSimulating] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [sseActive, setSseActive] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const fetchStatus = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/ips");
+      const res = await fetch("/api/ips", {
+        headers: {
+          Authorization: `Bearer ${DEFAULT_AUTH_TOKEN}`,
+        },
+      });
       if (res.ok) {
         const json = await res.json();
         setData(json);
+      } else if (res.status === 401) {
+        setFeedback("Authentication error: 401 Unauthorized accessing /api/ips");
+      } else if (res.status === 429) {
+        setFeedback("Rate limit reached. Please wait a moment.");
       }
     } catch (e) {
       console.error("Failed to fetch IPS engine status", e);
@@ -41,14 +57,18 @@ export function LiveEngineStatus() {
       setFeedback("Simulating SQL Injection, Port Scan, and ICMP Flood attacks...");
       const res = await fetch("/api/ips", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${DEFAULT_AUTH_TOKEN}`,
+        },
         body: JSON.stringify({ action: "simulate" }),
       });
       if (res.ok) {
         setFeedback("Simulated attacks successfully captured and blocked by Python IPS engine!");
         await fetchStatus();
       } else {
-        setFeedback("Failed to trigger simulation.");
+        const err = await res.json().catch(() => ({}));
+        setFeedback(`Simulation error (${res.status}): ${err.error || "Failed"}`);
       }
     } catch (e) {
       setFeedback("Error executing simulation.");
@@ -59,9 +79,58 @@ export function LiveEngineStatus() {
   };
 
   useEffect(() => {
+    // Initial fetch of engine state and recent alerts
     fetchStatus();
-    const interval = setInterval(fetchStatus, 8000);
-    return () => clearInterval(interval);
+
+    // 1. Establish Real-Time Server-Sent Events (SSE) Stream
+    let fallbackInterval: NodeJS.Timeout | null = null;
+    try {
+      const sseUrl = `/api/ips/stream?token=${encodeURIComponent(DEFAULT_AUTH_TOKEN)}`;
+      const es = new EventSource(sseUrl);
+      eventSourceRef.current = es;
+
+      es.onopen = () => {
+        setSseActive(true);
+      };
+
+      es.onmessage = (event) => {
+        try {
+          const newAlert: AlertRecord = JSON.parse(event.data);
+          setData((prev: any) => {
+            if (!prev) return prev;
+            const updatedAlerts = [newAlert, ...(prev.alerts || [])];
+            return {
+              ...prev,
+              recentAlertsCount: (prev.recentAlertsCount || 0) + 1,
+              alerts: updatedAlerts.slice(0, 50),
+            };
+          });
+        } catch {
+          // heartbeat or unparseable
+        }
+      };
+
+      es.onerror = () => {
+        // SSE disconnected: fall back to polling
+        setSseActive(false);
+        es.close();
+        if (!fallbackInterval) {
+          fallbackInterval = setInterval(fetchStatus, 8000);
+        }
+      };
+    } catch {
+      setSseActive(false);
+      fallbackInterval = setInterval(fetchStatus, 8000);
+    }
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+      }
+    };
   }, []);
 
   return (
@@ -72,11 +141,23 @@ export function LiveEngineStatus() {
             <Radio className="w-4 h-4 animate-pulse" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-bold text-slate-100 font-mono uppercase tracking-wide">
                 Live Python IPS Engine Telemetry
               </h3>
               <StatusBadge status="Engine Connected" variant="emerald" size="sm" />
+              {sseActive ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/40 text-cyan-300">
+                  <Activity className="w-2.5 h-2.5 text-cyan-400 animate-pulse" /> SSE Live
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                  Polling Fallback
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/30 text-emerald-400">
+                <Lock className="w-2.5 h-2.5" /> Auth Secured
+              </span>
             </div>
             <p className="text-[11px] text-slate-400">
               Synchronized with <code className="text-cyan-300">Intrusion-Detection_system/rules.json</code> and <code className="text-cyan-300">logs/ips_alerts.jsonl</code>
@@ -119,7 +200,7 @@ export function LiveEngineStatus() {
         <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
           <span className="text-slate-400 text-[10px] block">Prevention Mode</span>
           <span className="text-emerald-400 font-bold">
-            {data?.rules?.general?.simulation_mode ? "SIMULATION" : "ACTIVE BLOCK (Windows Firewall)"}
+            {data?.rules?.general?.simulation_mode ? "SIMULATION" : "ACTIVE BLOCK (Firewall)"}
           </span>
         </div>
 
@@ -156,11 +237,11 @@ export function LiveEngineStatus() {
             {data.alerts.slice(0, 6).map((al: AlertRecord, idx: number) => (
               <div key={idx} className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px]">
                 <div className="flex items-center gap-2">
-                  <StatusBadge status={al.action_taken} variant="auto" size="sm" />
-                  <span className="text-rose-400 font-bold">{al.source_ip}</span>
+                  <StatusBadge status={al.action_taken || (al as any).action} variant="auto" size="sm" />
+                  <span className="text-rose-400 font-bold">{al.source_ip || (al as any).src_ip}</span>
                   <span className="text-slate-400">→</span>
-                  <span className="text-slate-300">{al.target_ip || "Any"}</span>
-                  <span className="text-slate-400">({al.alert_type})</span>
+                  <span className="text-slate-300">{al.target_ip || (al as any).dst_ip || "Any"}</span>
+                  <span className="text-slate-400">({al.alert_type || (al as any).rule_id})</span>
                 </div>
                 <div className="text-slate-400 truncate max-w-sm">
                   {al.details}

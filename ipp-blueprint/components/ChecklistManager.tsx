@@ -20,65 +20,40 @@ import { ChecklistItem, Priority } from "@/data/types";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CopyButton } from "@/components/CopyButton";
 import { ExportPrintButton } from "@/components/ExportPrintButton";
-
-const STORAGE_KEY = "ipp_blueprint_checklist_v1";
+import { useProgramStore } from "@/lib/store";
 
 export function ChecklistManager() {
   const allItems: ChecklistItem[] = useMemo(() => generateChecklist(), []);
-
-  const [checkedMap, setCheckedMap] = useState<Record<string, boolean>>({});
   const [mounted, setMounted] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [selectedSection, setSelectedSection] = useState<string>("All");
-  const [selectedPriority, setSelectedPriority] = useState<string>("All");
-  const [selectedFramework, setSelectedFramework] = useState<string>("All");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Load from localStorage
+  // Zustand persistent store
+  const {
+    checkedMap,
+    toggleItem,
+    selectAll,
+    clearAll,
+    searchQuery,
+    setSearchQuery,
+    selectedSection,
+    setSelectedSection,
+    selectedPriority,
+    setSelectedPriority,
+    selectedFramework,
+    setSelectedFramework,
+    expandedId,
+    setExpandedId,
+  } = useProgramStore();
+
   useEffect(() => {
     setMounted(true);
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        setCheckedMap(JSON.parse(saved));
-      } else {
-        // Default check P1 items initially for realistic dashboard
-        const initial: Record<string, boolean> = {};
-        allItems.forEach((item, idx) => {
-          if (item.priority === "P1" && idx % 2 === 0) {
-            initial[item.id] = true;
-          }
-        });
-        setCheckedMap(initial);
-      }
-    } catch (e) {
-      console.error("Failed to load checklist from localStorage", e);
-    }
-  }, [allItems]);
-
-  // Save to localStorage
-  const toggleItem = (id: string) => {
-    const updated = { ...checkedMap, [id]: !checkedMap[id] };
-    setCheckedMap(updated);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch (e) {
-      console.error("Failed to persist checklist to localStorage", e);
-    }
-  };
+  }, []);
 
   const handleSelectAll = () => {
-    const allChecked: Record<string, boolean> = {};
-    allItems.forEach(item => {
-      allChecked[item.id] = true;
-    });
-    setCheckedMap(allChecked);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(allChecked));
+    selectAll(allItems.map((i) => i.id));
   };
 
   const handleClearAll = () => {
-    setCheckedMap({});
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({}));
+    clearAll();
   };
 
   // Sections list

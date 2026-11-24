@@ -1,0 +1,113 @@
+name: Continuous Integration & Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  engine-ci:
+    name: Python Engine CI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install libpcap (Linux only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev nftables iptables
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Intrusion-Detection_system/requirements.txt ruff pytest pydantic-settings regex prometheus_client
+
+      - name: Lint with ruff
+        run: |
+          cd Intrusion-Detection_system
+          python -m ruff check .
+
+      - name: Run unit & integration tests
+        run: |
+          cd Intrusion-Detection_system
+          python -m pytest -v
+
+  web-ci:
+    name: Next.js Web Portal CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./ipp-blueprint
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: ipp-blueprint/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Unit Tests
+        run: npm run test
+
+      - name: Build Next.js Production Bundle
+        run: npm run build
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E Smoke Tests
+        run: npx playwright test
+
+  security-audit:
+    name: Automated Security & Secrets Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks Secret Detection
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python Dependency Audit
+        run: |
+          pip install pip-audit
+          pip-audit -r Intrusion-Detection_system/requirements.txt || true
+
+      - name: Node Dependency Audit
+        run: |
+          cd ipp-blueprint
+          npm audit --omit=dev --audit-level=high || true

@@ -3,11 +3,9 @@ Test and Demonstration script for Intrusion Prevention System (IPS).
 Simulates various attack patterns (Port scan, SQL injection payload, ICMP flood)
 to verify that the IPS analyzer detects and triggers prevention.
 """
-import sys
-import time
-from config import load_rules
-from blocker import Blocker
 from analyzer import IntrusionAnalyzer
+from blocker import Blocker
+from config import load_rules
 
 
 def run_unit_tests():

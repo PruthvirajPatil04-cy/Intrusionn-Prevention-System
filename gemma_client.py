@@ -1,56 +1,58 @@
 """
-Gemma 4 31B (google/gemma-4-31b-it) Client via NVIDIA NIM API.
+Google Gemma 4 31B AI analysis client for high-accuracy coding and security logic.
 """
-import os
-import requests
-from pathlib import Path
+from __future__ import annotations
 
-ENV_FILE = Path(__file__).resolve().parent / ".env"
-INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+import json
+import urllib.error
+import urllib.request
+from typing import Optional
 
-
-def get_api_key() -> str:
-    key = os.environ.get("NVIDIA_API_KEY")
-    if key:
-        return key
-    if ENV_FILE.exists():
-        with open(ENV_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("NVIDIA_API_KEY="):
-                    return line.strip().split("=", 1)[1].strip("\"'")
-    return "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"
+from config import settings
 
 
-def ask_gemma(prompt: str, system_message: str = "You are a helpful assistant.", stream: bool = False):
-    api_key = get_api_key()
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "text/event-stream" if stream else "application/json",
-    }
+def get_gemma_api_key() -> str:
+    return settings.gemma_api_key or ""
+
+
+def ask_gemma(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    model: str = "google/gemma-4-31b-it"
+) -> str:
+    api_key = get_gemma_api_key()
+    if not api_key:
+        return "Error: GEMMA_API_KEY not configured in environment or .env."
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
     payload = {
-        "model": "google/gemma-4-31b-it",
+        "model": model,
         "max_tokens": 1024,
-        "stream": stream,
         "temperature": 0.5,
-        "top_p": 1,
-        "messages": [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": prompt}
-        ]
+        "messages": messages
     }
 
-    response = requests.post(INVOKE_URL, headers=headers, json=payload, stream=stream, timeout=90)
-    if stream:
-        for line in response.iter_lines():
-            if line:
-                print(line.decode("utf-8"))
-    else:
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
+    req = urllib.request.Request(
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        return f"Gemma API error: {e}"
 
 
 if __name__ == "__main__":
-    question = "What is 17 * 23?"
-    print(f"[*] Prompting Gemma 4 31B: '{question}'...")
-    ans = ask_gemma(question)
-    print(f"\n[Gemma Response]:\n{ans}")
+    print("Testing Gemma 4 31B...")
+    print(ask_gemma("Verify the security of firewall port blocking logic."))
